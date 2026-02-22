@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  COMPANY
+  CANDIDATE
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+}
+
+enum ProctoringEventType {
+  TAB_SWITCH
+  FULLSCREEN_EXIT
+  SUSPICIOUS_ACTIVITY
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  password            String
+  name                String
+  role                Role      @default(CANDIDATE)
+  isActive            Boolean   @default(true)
+  refreshToken        String?
+  refreshTokenFamily  String?
+  isEmailVerified     Boolean   @default(false)
+  isTwoFactorEnabled  Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  company        Company?
+  attempts       Attempt[]
+  proctoringLogs ProctoringLog[]
+  auditLogs      AuditLog[]
+  trustedDevices TrustedDevice[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model TrustedDevice {
+  id              String   @id @default(uuid())
+  userId          String
+  fingerprintHash String
+  deviceName      String?
+  ipAddress       String?
+  isTrusted       Boolean  @default(false)
+  lastUsedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprintHash])
+  @@index([userId])
+  @@map("trusted_devices")
+}
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  website     String?
+  userId      String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exams Exam[]
+
+  @@map("companies")
+}
+
+model Exam {
+  id                    String    @id @default(uuid())
+  title                 String
+  description           String?
+  duration              Int       // in minutes
+  totalMarks            Int
+  isPublished           Boolean   @default(false)
+  allowMultipleAttempts Boolean   @default(false)
+  companyId             String
+  isDeleted             Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  questions Question[]
+  attempts  Attempt[]
+
+  @@index([companyId])
+  @@index([isPublished, isDeleted])
+  @@map("exams")
+}
+
+model Question {
+  id            String @id @default(uuid())
+  examId        String
+  questionText  String
+  options       Json   // Array of option strings
+  correctAnswer String
+  marks         Int
+
+  exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([examId])
+  @@map("questions")
+}
+
+model Attempt {
+  id                String        @id @default(uuid())
+  candidateId       String
+  examId            String
+  startedAt         DateTime      @default(now())
+  submittedAt       DateTime?
+  score             Int?
+  status            AttemptStatus @default(IN_PROGRESS)
+  tabSwitchCount    Int           @default(0)
+  answers           Json?         // { questionId: selectedAnswer }
+  suspiciousScore   Int           @default(0)
+  deviceFingerprint String?
+  ipAddress         String?
+  geoLocation       Json?
+  isFlagged         Boolean       @default(false)
+
+  candidate      User            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  exam           Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  proctoringLogs ProctoringLog[]
+
+  @@unique([candidateId, examId])
+  @@index([candidateId])
+  @@index([examId])
+  @@index([isFlagged])
+  @@map("attempts")
+}
+
+model ProctoringLog {
+  id                String              @id @default(uuid())
+  attemptId         String
+  candidateId       String
+  type              ProctoringEventType
+  details           String?
+  ipAddress         String?
+  deviceFingerprint String?
+  geoLocation       Json?
+  timestamp         DateTime            @default(now())
+
+  attempt   Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  candidate User    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@index([candidateId])
+  @@map("proctoring_logs")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([entity])
+  @@index([timestamp])
+  @@index([action])
+  @@map("audit_logs")
+}
