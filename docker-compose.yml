@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: proctiq-api
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/proctiq?schema=public
+      - JWT_ACCESS_SECRET=change-me-access-secret-in-production
+      - JWT_REFRESH_SECRET=change-me-refresh-secret-in-production
+      - JWT_ACCESS_EXPIRY=15m
+      - JWT_REFRESH_EXPIRY=7d
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CORS_ORIGIN=http://localhost:3001
+      - THROTTLE_TTL=60000
+      - THROTTLE_LIMIT=100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - proctiq-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: proctiq-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: proctiq
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ 'CMD-SHELL', 'pg_isready -U postgres' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - proctiq-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: proctiq-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: [ 'CMD', 'redis-cli', 'ping' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - proctiq-network
+
+volumes:
+  pgdata:
+  redisdata:
+
+
+networks:
+  proctiq-network:
+    driver: bridge
